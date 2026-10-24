@@ -1,0 +1,53 @@
+name: Build and deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The repository root IS the built site (index.html, assets/, data/ ...). "Build" here means: assemble exactly what will be
+      # published, and fail the run - before anything goes live - if it is not a correct export for this address.
+      - name: Assemble and check the site
+        run: |
+          set -euo pipefail
+          mkdir _site
+          tar --exclude=./.git --exclude=./.github --exclude=./_site -cf - . | tar -xf - -C _site
+          test -f _site/index.html && test -f _site/404.html && test -f _site/assets/config.js
+          if grep -rIl "pages\.dev" _site; then echo "::error::the old Cloudflare Pages host is still referenced"; exit 1; fi
+          if grep -q "<ACCOUNT_SUBDOMAIN>" _site/assets/config.js; then echo "::error::api_base is still a placeholder"; exit 1; fi
+          for f in _site/*.html; do
+            [ "$(basename "$f")" = "404.html" ] && continue
+            grep -q 'src="/mutual-fund-flows/assets/app.js"' "$f" || { echo "::error::$f does not load assets from /mutual-fund-flows/"; exit 1; }
+          done
+          echo "site ok: $(find _site -type f | wc -l) files"
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

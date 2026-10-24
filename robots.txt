@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://rohitagrawal21.github.io/mutual-fund-flows/sitemap.xml
